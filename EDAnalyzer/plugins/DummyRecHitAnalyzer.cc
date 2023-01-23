@@ -1,10 +1,10 @@
-#include "calibration_algorithms/EDAnalyzer/interface/RecHitProducer.h"
+#include "calibration_algorithms/EDAnalyzer/interface/DummyRecHitAnalyzer.h"
 
 // ------------ method called for each event  ------------
-void RecHitProducer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) {
+void DummyRecHitAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup) {
     using namespace edm;
 
-    printf(">>> RecHitProducer::analyze: Hello World!\n");
+    printf(">>> DummyRecHitAnalyzer::analyze: Hello World!\n");
 
     //for (const auto& track : iEvent.get(tracksToken_)) {
     //  // do something with track parameters, e.g, plot the charge.
@@ -84,7 +84,7 @@ void RecHitProducer::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
                 adc_channel_37 -= correction;
             }
 
-            myRunStatCollection.add_entry(globalChannelId-1, adc_channel_37, adc_channel_CM);
+            fill_profiles(globalChannelId-1, adc_channel_37);
         }
 
         // perform common mode subtraction
@@ -96,13 +96,13 @@ void RecHitProducer::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
             adc_double -= correction;
         }
 
-        // store information
-        Hit hit( event, detid, adc, toa, tot, trigtime ); // Note: need subtraction from pedestal run
-        hits[event].push_back( hit );
+        fill_profiles(globalChannelId, adc_double);
 
         if(globalChannelId==7) fill_histograms();
 
-        fill_profiles();
+        // store information (Arnaud's code)
+        Hit hit( event, detid, adc, toa, tot, trigtime ); // Note: need subtraction from pedestal run
+        hits[event].push_back( hit );
 
         continue;
 
@@ -114,35 +114,44 @@ void RecHitProducer::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
 }
 
 // ------------ method called once each job just before starting event loop  ------------
-void RecHitProducer::beginJob() {
-    printf("[INFO] start processing run with CM subtraction\n");
-
-    //------------------------------
-    // tree for beam data
-    //------------------------------
-    TString default_rootfile = "/eos/cms/store/group/dpg_hgcal/tb_hgcal/2022/sps_oct2022/pion_beam_150_320fC/beam_run/run_20221007_191926/beam_run0.root";
-    TString input = default_rootfile;
-    printf(">>> beam run: %s\n", input.Data());
+void DummyRecHitAnalyzer::beginJob() {
+    //--------------------------------------------------
+    // load trees from beam data / pedestal run
+    //--------------------------------------------------
+    TString root_beamRun  = "/eos/cms/store/group/dpg_hgcal/tb_hgcal/2022/sps_oct2022/pion_beam_150_320fC/beam_run/run_20221007_191926/beam_run0.root";
+    TString root_pedestal = "/eos/cms/store/group/dpg_hgcal/tb_hgcal/2022/sps_oct2022/pedestals/pedestal_320fC/pedestal_run/run_20221008_192720/pedestal_run0.root";
+    TString input = (myTag=="beam") ? root_beamRun : root_pedestal;
+    printf("[INFO] Input rootfile: %s\n", input.Data());
 
     f1 = new TFile(input, "R");
     t1 = (TTree*) f1->Get("unpacker_data/hgcroc");
+    Init(t1); // SetBranchAddress, init variables, etc.
+    Init_my_output_info(); // Register histograms, etc. -> to be replaced in DQMEDAnalyzer
 
-    Init(t1, "beam");
-    enable_pedestal_subtraction();
-    enable_cm_subtraction();
-    init_my_output_info();
+    // determine which metaData to load, set boolean and tag of calibrations
+    if(calibration_flags[0]) enable_pedestal_subtraction();
+    if(calibration_flags[1]) enable_cm_subtraction();
     Load_metaData();
 }
 
 // ------------ method called once each job just after ending the event loop  ------------
-void RecHitProducer::endJob() {
-    printf("[INFO] this is the end of the job\n");
+void DummyRecHitAnalyzer::endJob() {
+    // prepare summary for running statistics
+    std::vector<RunningStatistics> mRs = myRunStatCollection.get_vector_running_statistics();
+    for(int channelId=0; channelId<234; ++channelId) {
+        h_correlation -> SetBinContent( channelId+1, mRs[channelId].get_correlation() );
+        h_slope       -> SetBinContent( channelId+1, mRs[channelId].get_slope()       );
+        h_intercept   -> SetBinContent( channelId+1, mRs[channelId].get_intercept()   );
+    }
 
-    //export_cm_parameters(); // for plotting in macro
+    if(myTag=="pedestal" && !flag_perform_pedestal_subtraction) { export_pedestals(); }
+    if(myTag=="beam" && !flag_perform_cm_subtraction) { export_cm_parameters(); }
+
+    printf("[INFO] This is the end of the job\n");
 }
 
 // ------------ method fills 'descriptions' with the allowed parameters for the module  ------------
-void RecHitProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+void DummyRecHitAnalyzer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
     //The following says we do not know what parameters are allowed so do no validation
     // Please change this to state exactly what you do use, even if it is no parameters
     edm::ParameterSetDescription desc;
@@ -157,4 +166,4 @@ void RecHitProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptio
 }
 
 //define this as a plug-in
-DEFINE_FWK_MODULE(RecHitProducer);
+DEFINE_FWK_MODULE(DummyRecHitAnalyzer);

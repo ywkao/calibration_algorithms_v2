@@ -21,10 +21,30 @@ process.source = cms.Source("PoolSource",
 #process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-1))
 process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(1))
 
-process.RecHitProducer = cms.EDAnalyzer('RecHitProducer')
+process.DummyRecHitAnalyzer = cms.EDAnalyzer('DummyRecHitAnalyzer',
+                                        DataType = cms.string("beam"),
+                                        CalibrationFlags = cms.vint32(1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+
+                                        #---------------- Options of DataType -----------------#
+                                        # option 1: beam
+                                        # option 2: pedestal
+                                        #
+                                        #---------- Definitions of calibration flags ----------#
+                                        # calibration_flags[0]: pedestal subtraction
+                                        # calibration_flags[1]: cm subtraction
+                                        # calibration_flags[2]: BX-1 correction
+                                        # calibration_flags[3]: gain linearization
+                                        # calibration_flags[4]: charge collection efficiency
+                                        # calibration_flags[5]: MIP scale
+                                        # calibration_flags[6]: EM scale
+                                        # calibration_flags[7]: zero suppression
+                                        # calibration_flags[8]: hit energy calibration
+                                        # calibration_flags[9]: ToA conversion
+                                        #------------------------------------------------------#
+        )
 
 process.TFileService = cms.Service("TFileService",
         fileName = cms.string('./rootfiles/output_pure_test.root')
         )
 
-process.p = cms.Path(process.RecHitProducer)
+process.p = cms.Path(process.DummyRecHitAnalyzer)

@@ -1,12 +1,12 @@
-#ifndef __RecHitProducer_H__
-#define __RecHitProducer_H__
+#ifndef __DummyRecHitAnalyzer_H__
+#define __DummyRecHitAnalyzer_H__
 
 // -*- C++ -*-
 //
-// Package:    EDAnalyzer/RecHitProducer
-// Class:      RecHitProducer
+// Package:    EDAnalyzer/DummyRecHitAnalyzer
+// Class:      DummyRecHitAnalyzer
 //
-/**\class RecHitProducer RecHitProducer.cc EDAnalyzer/RecHitProducer/plugins/RecHitProducer.cc
+/**\class DummyRecHitAnalyzer DummyRecHitAnalyzer.cc EDAnalyzer/DummyRecHitAnalyzer/plugins/DummyRecHitAnalyzer.cc
 
 Description: [one line class summary]
 
@@ -26,6 +26,7 @@ Implementation:
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 //#include <TCanvas.h>
 #include <TChain.h>
@@ -57,6 +58,9 @@ Implementation:
 #include "calibration_algorithms/EDAnalyzer/interface/hgcalhit.h"
 #include "calibration_algorithms/EDAnalyzer/interface/RunningCollection.h"
 
+using namespace std;
+using namespace edm;
+
 //--------------------------------------------------------------------------------//
 // It is not easy to employ TFileService outside a framework module...
 //--------------------------------------------------------------------------------//
@@ -73,10 +77,10 @@ Implementation:
 
 //using reco::TrackCollection;
 
-class RecHitProducer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
+class DummyRecHitAnalyzer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
     public:
-        explicit RecHitProducer(const edm::ParameterSet&);
-        ~RecHitProducer();
+        explicit DummyRecHitAnalyzer(const edm::ParameterSet&);
+        ~DummyRecHitAnalyzer();
 
         static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
@@ -85,8 +89,8 @@ class RecHitProducer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
         void analyze(const edm::Event&, const edm::EventSetup&) override;
         void endJob() override;
 
-        virtual void     Init(TTree *tree=0, TString tag="");
-        virtual void     init_my_output_info();
+        virtual void     Init(TTree *tree=0);
+        virtual void     Init_my_output_info();
 
         virtual void     enable_pedestal_subtraction();
         virtual void     enable_cm_subtraction();
@@ -95,12 +99,18 @@ class RecHitProducer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
         virtual void     Load_metaData(); // pedestal, CM correlation, etc.
 
         virtual void     fill_histograms();
-        virtual void     fill_profiles();
+        virtual void     fill_profiles(int globalChannelId_, double adc_double_);
 
         virtual void     export_pedestals();
         virtual void     export_cm_parameters();
 
         virtual void     Show(Long64_t entry = -1);
+
+        //--------------------------------------------------
+        // variables initiated from python configure file
+        //--------------------------------------------------
+        std::vector<int> calibration_flags;
+        TString myTag;
 
         //--------------------------------------------------
         // member data
@@ -110,12 +120,8 @@ class RecHitProducer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
         RunningCollection myRunStatCollection;
         RunningStatistics myRecorder;
 
-        std::ofstream csv_file_cm_parameters;
-
-        TString myTag;
         TString tag_calibration;
         TString tag_channelId;
-        TString output_directory;
         int globalChannelId;
         double adc_double;
         double adc_channel_CM;
@@ -207,16 +213,23 @@ class RecHitProducer : public edm::one::EDAnalyzer<edm::one::SharedResources> {
 //
 // constructors and destructor
 //
-RecHitProducer::RecHitProducer(const edm::ParameterSet& iConfig) {
+DummyRecHitAnalyzer::DummyRecHitAnalyzer(const edm::ParameterSet& iConfig) {
+    //: calibration_flags( iConfig.getParameter<std::vector<bool> >( "CalibrationFlags" ) ) {
     //: tracksToken_(consumes<TrackCollection>(iConfig.getUntrackedParameter<edm::InputTag>("tracks"))) {
+
 #ifdef THIS_IS_AN_EVENTSETUP_EXAMPLE
     setupDataToken_ = esConsumes<SetupData, SetupRecord>();
 #endif
 
     //now do what ever initialization is needed
+    calibration_flags = iConfig.getParameter<vector<int> >( "CalibrationFlags" );
+    myTag = iConfig.getParameter<string>( "DataType" );
+
+    printf("[INFO] DataType: %s\n", myTag.Data());
+    // raise error if the value of DataType is unexpected?
 }
 
-RecHitProducer::~RecHitProducer() {
+DummyRecHitAnalyzer::~DummyRecHitAnalyzer() {
     // do anything here that needs to be done at desctruction time
     // (e.g. close files, deallocate resources etc.)
     //
@@ -228,7 +241,7 @@ RecHitProducer::~RecHitProducer() {
 // member functions
 //
 
-void RecHitProducer::Init(TTree *tree, TString tag)
+void DummyRecHitAnalyzer::Init(TTree *tree)
 {
     // The Init() function is called when the selector needs to initialize
     // a new tree or chain. Typically here the branch addresses and branch
@@ -239,7 +252,6 @@ void RecHitProducer::Init(TTree *tree, TString tag)
     // (once per file to be processed).
 
     if (tree == 0) printf("[ERROR] something goes wrong with input tree\n");
-    myTag = tag;
 
     // Set branch addresses and branch pointers
     if (!tree) return;
@@ -268,10 +280,9 @@ void RecHitProducer::Init(TTree *tree, TString tag)
 
     tag_calibration = "";
     tag_channelId = "_channel_7";
-    output_directory = "./eos/" + myTag + "/";
 }
 
-void RecHitProducer::init_my_output_info()
+void DummyRecHitAnalyzer::Init_my_output_info()
 {
     usesResource("TFileService");
     edm::Service<TFileService> fs; 
@@ -325,11 +336,11 @@ void RecHitProducer::init_my_output_info()
     h_intercept   -> SetStats(0); h_intercept   -> SetMarkerStyle(20); h_intercept   -> SetMarkerSize(0.5);
 }
 
-void RecHitProducer::enable_pedestal_subtraction() { flag_perform_pedestal_subtraction = true; tag_calibration = "_ped_subtracted"; }
+void DummyRecHitAnalyzer::enable_pedestal_subtraction() { flag_perform_pedestal_subtraction = true; tag_calibration = "_ped_subtracted"; }
 
-void RecHitProducer::enable_cm_subtraction() { flag_perform_cm_subtraction = true; tag_calibration = "_cm_subtracted"; }
+void DummyRecHitAnalyzer::enable_cm_subtraction() { flag_perform_cm_subtraction = true; tag_calibration = "_cm_subtracted"; }
 
-Long64_t RecHitProducer::LoadTree(Long64_t entry)
+Long64_t DummyRecHitAnalyzer::LoadTree(Long64_t entry)
 {
     // Set the environment to read one entry
     if (!fChain) return -5;
@@ -341,73 +352,47 @@ Long64_t RecHitProducer::LoadTree(Long64_t entry)
     return centry;
 }
 
-void RecHitProducer::Load_metaData()
+void DummyRecHitAnalyzer::Load_metaData()
 {
-    // load pedestal from meta condition for beam run
-    if(myTag=="beam") {
-        std::string line;
+    TString csv_file_name = "./meta_conditions/calibration_parameters.csv";
+    printf("[INFO] Load calibration parameters: %s\n", csv_file_name.Data());
 
-        // pedestal parameters
-        std::ifstream myfile("./meta_conditions/auto_meta_parameters.csv");
-        if(myfile.is_open()) {
-            while(getline(myfile, line)) {
-                // skip comments
-                if(line.find("#")!=std::string::npos) continue;
+    std::string line;
+    std::ifstream loaded_csv_file(csv_file_name.Data());
 
-                // it takes time to remove space... do not create space in the first place
-                //std::string::iterator end_pos = std::remove(line.begin(), line.end(), ' ');
-                //line.erase(end_pos, line.end());
+    if(loaded_csv_file.is_open()) {
+        while(getline(loaded_csv_file, line)) {
+            // skip comments
+            if(line.find("#")!=std::string::npos) continue;
 
-                std::size_t found = line.find(",");
-                int channel_id  = std::stoi( line.substr(0,found) );
-                double pedestal = std::stod( line.substr(found+1, line.length()) );
-                map_pedestals[channel_id] = pedestal;
+            // it takes time to remove space... do not create space in the first place
+            //std::string::iterator end_pos = std::remove(line.begin(), line.end(), ' ');
+            //line.erase(end_pos, line.end());
 
-                //printf("channel_id = %d, pedestal = %.2f\n", channel_id, map_pedestals[channel_id]);
-            }
-            myfile.close();
-        } else {
-            std::cout << "[ERROR] unable to open ./meta_conditions/auto_meta_parameters.csv" << std::endl;
+            std::size_t found_1st_index = line.find(",");
+            std::size_t found_2nd_index = line.find(",", found_1st_index+1, 1);
+            std::size_t found_3rd_index = line.find(",", found_2nd_index+1, 1);
+            std::size_t found_4th_index = line.find(",", found_3rd_index+1, 1);
+
+            int channel_id   = std::stoi( line.substr(0,found_1st_index) );
+            double pedestal  = std::stod( line.substr(found_1st_index+1, found_2nd_index) );
+            double slope     = std::stod( line.substr(found_2nd_index+1, found_3rd_index) );
+            double intercept = std::stod( line.substr(found_3rd_index+1, found_4th_index) );
+
+            std::vector<double> v = {slope, intercept};
+            map_pedestals[channel_id] = pedestal;
+            map_cm_parameters[channel_id] = v;
+
+            printf("channel_id = %d, pedestal = %.3f, slope = %.3f, intercept = %6.3f\n",
+                    channel_id, map_pedestals[channel_id], map_cm_parameters[channel_id][0], map_cm_parameters[channel_id][1] );
         }
-
-        if(!flag_perform_cm_subtraction) return;
-
-        // cm parameters
-        std::ifstream csv_cm_file("./meta_conditions/auto_fitted_cm_parameters_ped_subtracted.csv");
-        if(csv_cm_file.is_open()) {
-            while(getline(csv_cm_file, line)) {
-                // skip comments
-                if(line.find("#")!=std::string::npos) continue;
-
-                // it takes time to remove space... do not create space in the first place
-                //std::string::iterator end_pos = std::remove(line.begin(), line.end(), ' ');
-                //line.erase(end_pos, line.end());
-
-                std::size_t found_first  = line.find(",");
-                std::size_t found_second = line.find(",", found_first+1, 1);
-
-                int channel_id  = std::stoi( line.substr(0,found_first) );
-                double slope = std::stod( line.substr(found_first+1, found_second) );
-                double intercept = std::stod( line.substr(found_second+1, line.length()) );
-                std::vector<double> v = {slope, intercept};
-                map_cm_parameters[channel_id] = v;
-
-                //std::cout << line << std::endl;
-                //std::cout << "found_first : " << found_first << std::endl;
-                //std::cout << "found_second : " << found_second << std::endl;
-                //printf("channel_id = %d, slope = %.3f, intercept = %.3f\n", channel_id, map_cm_parameters[channel_id][0], map_cm_parameters[channel_id][1] );
-            }
-            csv_cm_file.close();
-        } else {
-            std::cout << "[ERROR] unable to open ./meta_conditions/auto_fitted_cm_parameters_ped_subtracted.csv" << std::endl;
-        }
-
+        loaded_csv_file.close();
     } else {
-        std::cout << "[ERROR] this is not beam run. check your main function to ensure intput tag or order." << std::endl;
+        std::cout << "[ERROR] unable to open " << csv_file_name.Data() << std::endl;
     }
 }
 
-void RecHitProducer::fill_histograms()
+void DummyRecHitAnalyzer::fill_histograms()
 {
     myRecorder.add_entry(adc_channel_CM, adc_double);
 
@@ -418,41 +403,44 @@ void RecHitProducer::fill_histograms()
     h_trigtime -> Fill(trigtime);
 }
 
-void RecHitProducer::fill_profiles()
+void DummyRecHitAnalyzer::fill_profiles(int globalChannelId_, double adc_double_)
 {
     t_RecHit->Fill();
 
-    myRunStatCollection.add_entry(globalChannelId, adc_double, adc_channel_CM);
+    myRunStatCollection.add_entry(globalChannelId_, adc_double, adc_channel_CM);
 
-    p_adc      -> Fill(globalChannelId , adc_double , 1);
-    p_adcm     -> Fill(globalChannelId , adcm       , 1);
-    p_tot      -> Fill(globalChannelId , tot        , 1);
-    p_toa      -> Fill(globalChannelId , toa        , 1);
-    p_trigtime -> Fill(globalChannelId , trigtime   , 1);
+    p_adc      -> Fill(globalChannelId_ , adc_double , 1);
+    p_adcm     -> Fill(globalChannelId_ , adcm       , 1);
+    p_tot      -> Fill(globalChannelId_ , tot        , 1);
+    p_toa      -> Fill(globalChannelId_ , toa        , 1);
+    p_trigtime -> Fill(globalChannelId_ , trigtime   , 1);
 }
 
-void RecHitProducer::export_pedestals()
+void DummyRecHitAnalyzer::export_pedestals()
 {
     if(myTag!="pedestal") return;
 
-    std::ofstream myfile("./meta_conditions/auto_meta_parameters.csv");
+    TString csv_file_name = "./meta_conditions/output_EDAnalyzer_pedestals.csv";
+    std::ofstream myfile(csv_file_name.Data());
     myfile << "#--------------------------------------------------\n";
     myfile << "# info: " << myTag.Data() << "\n";
     myfile << "# columns: channel, pedestal\n";
     myfile << "#--------------------------------------------------\n";
 
+    // to-do: need to think how to extract pedestal from running parameters
     for(int i=0; i<234; ++i) {
         double mean = p_adc -> GetBinContent(i+1);
-        // do not create space for loading more easily
         myfile << Form("%d,%.2f\n", i, mean);
     }
 
     myfile.close();
+    printf("[INFO] export pedestal: %s\n", csv_file_name.Data());
 }
 
-void RecHitProducer::export_cm_parameters()
+void DummyRecHitAnalyzer::export_cm_parameters()
 {
-    std::ofstream myfile("./meta_conditions/auto_fitted_cm_parameters" + tag_calibration + ".csv");
+    TString csv_file_name = "./meta_conditions/output_EDAnalyzer_cm_parameters" + tag_calibration + ".csv";
+    std::ofstream myfile(csv_file_name.Data());
     myfile << "#--------------------------------------------------\n";
     myfile << "# info: " << myTag.Data() << "\n";
     myfile << "# columns: channel, slope, intercept, correlation\n";
@@ -461,14 +449,14 @@ void RecHitProducer::export_cm_parameters()
     std::vector<RunningStatistics> mRs = myRunStatCollection.get_vector_running_statistics();
 
     for(int i=0; i<234; ++i) {
-        // do not create space for loading more easily
         myfile << Form("%d,%.2f,%.2f,%.2f\n", i, mRs[i].get_slope(), mRs[i].get_intercept(), mRs[i].get_correlation());
     }
 
     myfile.close();
+    printf("[INFO] export CM parameters: %s\n", csv_file_name.Data());
 }
 
-void RecHitProducer::Show(Long64_t entry)
+void DummyRecHitAnalyzer::Show(Long64_t entry)
 {
     std::cout << "event"        << " = " << event        << ", ";
     std::cout << "chip"         << " = " << chip         << ", ";
